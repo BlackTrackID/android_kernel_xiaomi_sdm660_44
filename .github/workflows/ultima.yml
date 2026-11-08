@@ -21,25 +21,52 @@ jobs:
           ref: android-4.4-stable
           fetch-depth: 1
 
-      - name: 3. Integrasi ReSukiSU Ultima (Setup Manual)
+      - name: 3. Integrasi ReSukiSU Ultima (Metode Hybrid)
         run: |
-          # Menjalankan setup.sh dari repositori Ultima
-          curl -LSs "https://raw.githubusercontent.com/spacealtctrl/ReSukiSU-Ultima/main/kernel/setup.sh" | bash -s manual
-
-      - name: 4. Aktifkan Konfigurasi di Defconfig
-        run: |
-          DEFCONFIG=$(find arch/arm64/configs -name "*lavender*" | head -n 1)
-          if [ -z "$DEFCONFIG" ]; then DEFCONFIG="arch/arm64/configs/vendor_defconfig"; fi
-          echo "Menggunakan defconfig: $DEFCONFIG"
+          # 1. Jalankan setup.sh resmi ReSukiSU (base) untuk menanam hook ke kernel 4.4
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s manual
           
-          cat << 'EOF' >> "$DEFCONFIG"
+          # 2. Hapus folder KernelSU hasil setup base
+          rm -rf KernelSU
+          
+          # 3. Clone ReSukiSU Ultima dan ganti folder KernelSU dengan milik Ultima
+          git clone https://github.com/spacealtctrl/ReSukiSU-Ultima.git ReSukiSU-Ultima
+          cp -r ReSukiSU-Ultima/kernel KernelSU
+          
+          # 4. Daftarkan ke sistem build kernel (jika belum terdaftar)
+          if ! grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig; then
+            echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          fi
+          if ! grep -q "obj-\$(CONFIG_KSU) += kernelsu/" drivers/Makefile; then
+            echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+          fi
+
+      - name: 4. Deteksi Defconfig & Compile
+        run: |
+          # --- 1. OTOMATISASI PENCARIAN DEFCONFIG ---
+          echo "Mencari file defconfig..."
+          if [ -f "arch/arm64/configs/lavender_defconfig" ]; then
+            DEFCONFIG_NAME="lavender_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/lavender_defconfig" ]; then
+            DEFCONFIG_NAME="vendor/lavender_defconfig"
+          elif [ -f "arch/arm64/configs/sdm660_defconfig" ]; then
+            DEFCONFIG_NAME="sdm660_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/sdm660_defconfig" ]; then
+            DEFCONFIG_NAME="vendor/sdm660_defconfig"
+          else
+            echo "Peringatan: Defconfig lavender/sdm660 tidak ditemukan, mencoba default."
+            DEFCONFIG_NAME="vendor_defconfig"
+          fi
+          echo "✅ Menggunakan Defconfig: $DEFCONFIG_NAME"
+
+          # --- 2. TAMBAHKAN KONFIGURASI KSU ---
+          cat << 'EOF' >> "arch/arm64/configs/$DEFCONFIG_NAME"
           CONFIG_KSU=y
           CONFIG_KSU_MANUAL_HOOK=y
           CONFIG_KSU_MULTI_MANAGER_SUPPORT=y
           EOF
 
-      - name: 5. Download Toolchain (GCC) & Compile
-        run: |
+          # --- 3. SETUP TOOLCHAIN GCC ---
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32
           
@@ -47,11 +74,11 @@ jobs:
           export CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-"
           export PATH="$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
           
-          DEFCONFIG_NAME=$(cd arch/arm64/configs && find . -name "*lavender*" -o -name "vendor_defconfig" | sed 's|./||;q')
+          # --- 4. KOMPILASI ---
           make O=out ARCH=arm64 "$DEFCONFIG_NAME"
-          make -j$(nproc --all) O=out ARCH=arm64 CC="$CROSS_COMPILE"gcc CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
+          make -j$(nproc --all) O=out ARCH=arm64 CC="${CROSS_COMPILE}gcc" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
 
-      - name: 6. Bungkus ke AnyKernel3 (.zip)
+      - name: 5. Bungkus ke AnyKernel3 (.zip)
         run: |
           git clone https://github.com/osm0sis/AnyKernel3.git --depth=1 AnyKernel3
           sed -i 's/device.name1=.*/device.name1=lavender/' AnyKernel3/anykernel.sh
@@ -60,7 +87,7 @@ jobs:
           cd AnyKernel3
           zip -r9 ../Kernel-Lavender-ReSukiSU-Ultima.zip * -x .git README.md *placeholder
 
-      - name: 7. Upload Hasil Build
+      - name: 6. Upload Hasil Build
         uses: actions/upload-artifact@v4
         with:
           name: Kernel-Lavender-ReSukiSU-Ultima
