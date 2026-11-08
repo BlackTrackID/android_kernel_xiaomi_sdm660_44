@@ -20,7 +20,7 @@ jobs:
         with:
           kernel-url: .
           kernel-branch: android-4.4-stable
-          config: vendor_defconfig # Jika gagal, coba ganti jadi lavender_defconfig
+          config: sdm660_defconfig # <-- Diperbaiki dari vendor_defconfig
           arch: arm64
           aosp-gcc: true
           android-version: 10
