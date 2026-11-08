@@ -23,17 +23,23 @@ jobs:
 
       - name: 3. Integrasi ReSukiSU Ultima (Metode Hybrid)
         run: |
-          # 1. Jalankan setup.sh resmi ReSukiSU (base) untuk menanam hook ke kernel 4.4
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash -s manual
+          echo "=== 1. MENGUNDUH RESUKISU BASE ==="
+          git clone https://github.com/ReSukiSU/ReSukiSU.git ReSukiSU-Base
           
-          # 2. Hapus folder KernelSU hasil setup base
+          echo "=== 2. MENANAM KAIL (HOOKS) ==="
+          cd ReSukiSU-Base
+          if [ -f "kernel/setup.sh" ]; then
+            bash kernel/setup.sh manual || bash kernel/setup.sh
+          elif [ -f "setup.sh" ]; then
+            bash setup.sh manual || bash setup.sh
+          fi
+          cd ..
+          
+          echo "=== 3. MENGGANTI DENGAN RESUKISU ULTIMA ==="
           rm -rf KernelSU
-          
-          # 3. Clone ReSukiSU Ultima dan ganti folder KernelSU dengan milik Ultima
           git clone https://github.com/spacealtctrl/ReSukiSU-Ultima.git ReSukiSU-Ultima
           cp -r ReSukiSU-Ultima/kernel KernelSU
           
-          # 4. Daftarkan ke sistem build kernel (jika belum terdaftar)
           if ! grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig; then
             echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
           fi
@@ -43,30 +49,35 @@ jobs:
 
       - name: 4. Deteksi Defconfig & Compile
         run: |
-          # --- 1. OTOMATISASI PENCARIAN DEFCONFIG ---
-          echo "Mencari file defconfig..."
-          if [ -f "arch/arm64/configs/lavender_defconfig" ]; then
-            DEFCONFIG_NAME="lavender_defconfig"
+          echo "=== DAFTAR DEFCONFIG YANG TERSEDIA ==="
+          find arch/arm64/configs -name "*defconfig" | sort
+          
+          echo "=== MENCARI DEFCONFIG LAVENDER ==="
+          if [ -f "arch/arm64/configs/vendor/lavender-perf_defconfig" ]; then
+            DEFCONFIG_NAME="vendor/lavender-perf_defconfig"
           elif [ -f "arch/arm64/configs/vendor/lavender_defconfig" ]; then
             DEFCONFIG_NAME="vendor/lavender_defconfig"
-          elif [ -f "arch/arm64/configs/sdm660_defconfig" ]; then
-            DEFCONFIG_NAME="sdm660_defconfig"
+          elif [ -f "arch/arm64/configs/lavender_defconfig" ]; then
+            DEFCONFIG_NAME="lavender_defconfig"
+          elif [ -f "arch/arm64/configs/vendor/sdm660-perf_defconfig" ]; then
+            DEFCONFIG_NAME="vendor/sdm660-perf_defconfig"
           elif [ -f "arch/arm64/configs/vendor/sdm660_defconfig" ]; then
             DEFCONFIG_NAME="vendor/sdm660_defconfig"
+          elif [ -f "arch/arm64/configs/sdm660_defconfig" ]; then
+            DEFCONFIG_NAME="sdm660_defconfig"
           else
-            echo "Peringatan: Defconfig lavender/sdm660 tidak ditemukan, mencoba default."
+            echo "❌ Defconfig lavender/sdm660 tidak ditemukan, mencoba vendor_defconfig."
             DEFCONFIG_NAME="vendor_defconfig"
           fi
           echo "✅ Menggunakan Defconfig: $DEFCONFIG_NAME"
 
-          # --- 2. TAMBAHKAN KONFIGURASI KSU ---
           cat << 'EOF' >> "arch/arm64/configs/$DEFCONFIG_NAME"
           CONFIG_KSU=y
           CONFIG_KSU_MANUAL_HOOK=y
           CONFIG_KSU_MULTI_MANAGER_SUPPORT=y
           EOF
 
-          # --- 3. SETUP TOOLCHAIN GCC ---
+          echo "=== SETUP TOOLCHAIN GCC ==="
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_aarch64_aarch64-linux-android-4.9 --depth=1 gcc64
           git clone https://github.com/LineageOS/android_prebuilts_gcc_linux-x86_arm_arm-linux-androideabi-4.9 --depth=1 gcc32
           
@@ -74,8 +85,10 @@ jobs:
           export CROSS_COMPILE_ARM32="$PWD/gcc32/bin/arm-linux-androideabi-"
           export PATH="$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
           
-          # --- 4. KOMPILASI ---
-          make O=out ARCH=arm64 "$DEFCONFIG_NAME"
+          echo "=== MENGKONFIGURASI KERNEL ==="
+          make O=out ARCH=arm64 "$DEFCONFIG_NAME" || exit 1
+          
+          echo "=== MEMULAI KOMPILASI ==="
           make -j$(nproc --all) O=out ARCH=arm64 CC="${CROSS_COMPILE}gcc" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
 
       - name: 5. Bungkus ke AnyKernel3 (.zip)
