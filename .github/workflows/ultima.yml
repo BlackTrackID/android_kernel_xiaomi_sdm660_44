@@ -21,34 +21,15 @@ jobs:
           ref: android-4.4-stable
           fetch-depth: 1
 
-      - name: 3. Integrasi ReSukiSU Ultima (Metode Hybrid)
+      - name: 3. Integrasi ReSukiSU Ultima (Direct Setup)
         run: |
-          echo "=== 1. MENGUNDUH RESUKISU BASE ==="
-          git clone https://github.com/ReSukiSU/ReSukiSU.git ReSukiSU-Base
-          
-          echo "=== 2. MENANAM KAIL (HOOKS) ==="
-          cd ReSukiSU-Base
-          if [ -f "kernel/setup.sh" ]; then
-            bash kernel/setup.sh manual || bash kernel/setup.sh
-          elif [ -f "setup.sh" ]; then
-            bash setup.sh manual || bash setup.sh
-          fi
-          cd ..
-          
-          echo "=== 3. MENGGANTI DENGAN RESUKISU ULTIMA ==="
-          rm -rf KernelSU
-          git clone https://github.com/spacealtctrl/ReSukiSU-Ultima.git ReSukiSU-Ultima
-          cp -r ReSukiSU-Ultima/kernel KernelSU
-          
-          if ! grep -q "source \"drivers/kernelsu/Kconfig\"" drivers/Kconfig; then
-            echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
-          fi
-          if ! grep -q "obj-\$(CONFIG_KSU) += kernelsu/" drivers/Makefile; then
-            echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
-          fi
+          # Menggunakan script resmi Ultima langsung
+          curl -LSs "https://raw.githubusercontent.com/spacealtctrl/ReSukiSU-Ultima/main/kernel/setup.sh" | bash -s manual
 
       - name: 4. Deteksi Defconfig & Compile
         run: |
+          set -x # Mencetak setiap perintah yang dieksekusi untuk debugging
+          
           echo "=== DAFTAR DEFCONFIG YANG TERSEDIA ==="
           find arch/arm64/configs -name "*defconfig" | sort
           
@@ -71,6 +52,7 @@ jobs:
           fi
           echo "✅ Menggunakan Defconfig: $DEFCONFIG_NAME"
 
+          # Tambahkan konfigurasi KSU secara eksplisit
           cat << 'EOF' >> "arch/arm64/configs/$DEFCONFIG_NAME"
           CONFIG_KSU=y
           CONFIG_KSU_MANUAL_HOOK=y
@@ -86,7 +68,7 @@ jobs:
           export PATH="$PWD/gcc64/bin:$PWD/gcc32/bin:$PATH"
           
           echo "=== MENGKONFIGURASI KERNEL ==="
-          make O=out ARCH=arm64 "$DEFCONFIG_NAME" || exit 1
+          make O=out ARCH=arm64 "$DEFCONFIG_NAME"
           
           echo "=== MEMULAI KOMPILASI ==="
           make -j$(nproc --all) O=out ARCH=arm64 CC="${CROSS_COMPILE}gcc" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
