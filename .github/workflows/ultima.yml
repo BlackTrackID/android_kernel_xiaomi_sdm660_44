@@ -23,17 +23,11 @@ jobs:
 
       - name: 3. Integrasi ReSukiSU Ultima (Direct Setup)
         run: |
-          # Menggunakan script resmi Ultima langsung
           curl -LSs "https://raw.githubusercontent.com/spacealtctrl/ReSukiSU-Ultima/main/kernel/setup.sh" | bash -s manual
 
       - name: 4. Deteksi Defconfig & Compile
         run: |
-          set -x # Mencetak setiap perintah yang dieksekusi untuk debugging
-          
-          echo "=== DAFTAR DEFCONFIG YANG TERSEDIA ==="
-          find arch/arm64/configs -name "*defconfig" | sort
-          
-          echo "=== MENCARI DEFCONFIG LAVENDER ==="
+          # Mencari defconfig
           if [ -f "arch/arm64/configs/vendor/lavender-perf_defconfig" ]; then
             DEFCONFIG_NAME="vendor/lavender-perf_defconfig"
           elif [ -f "arch/arm64/configs/vendor/lavender_defconfig" ]; then
@@ -47,12 +41,10 @@ jobs:
           elif [ -f "arch/arm64/configs/sdm660_defconfig" ]; then
             DEFCONFIG_NAME="sdm660_defconfig"
           else
-            echo "❌ Defconfig lavender/sdm660 tidak ditemukan, mencoba vendor_defconfig."
             DEFCONFIG_NAME="vendor_defconfig"
           fi
           echo "✅ Menggunakan Defconfig: $DEFCONFIG_NAME"
 
-          # Tambahkan konfigurasi KSU secara eksplisit
           cat << 'EOF' >> "arch/arm64/configs/$DEFCONFIG_NAME"
           CONFIG_KSU=y
           CONFIG_KSU_MANUAL_HOOK=y
@@ -70,8 +62,14 @@ jobs:
           echo "=== MENGKONFIGURASI KERNEL ==="
           make O=out ARCH=arm64 "$DEFCONFIG_NAME"
           
-          echo "=== MEMULAI KOMPILASI ==="
-          make -j$(nproc --all) O=out ARCH=arm64 CC="${CROSS_COMPILE}gcc" CROSS_COMPILE="$CROSS_COMPILE" CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32"
+          echo "=== MEMULAI KOMPILASI (DENGAN FIX WARNING) ==="
+          # DISINILAH OBATNYA: HOSTCFLAGS="-Wno-error -fcommon" memaksa compiler modern untuk bersikap toleran
+          make -j$(nproc --all) O=out ARCH=arm64 \
+            CC="${CROSS_COMPILE}gcc" \
+            CROSS_COMPILE="$CROSS_COMPILE" \
+            CROSS_COMPILE_ARM32="$CROSS_COMPILE_ARM32" \
+            HOSTCFLAGS="-Wno-error -fcommon" \
+            HOSTCXXFLAGS="-Wno-error -fcommon"
 
       - name: 5. Bungkus ke AnyKernel3 (.zip)
         run: |
